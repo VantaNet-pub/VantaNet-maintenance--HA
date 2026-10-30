@@ -1,5 +1,5 @@
 name: VantaNet Maintenance
-version: "1.2.4"
+version: "1.3.0"
 slug: vantanet_maintenance
 description: Halbjährliche Wartung, Tablet-Steuerung und Fachkraft-PIN
 url: https://vantanet.net
@@ -10,6 +10,11 @@ arch:
 startup: services
 boot: auto
 init: false
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
+map:
+  - homeassistant_config:ro
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:tools
@@ -19,6 +24,7 @@ ports:
 ports_description:
   8099/tcp: Lokaler Zugriff auf Display-Seiten (nicht ins Internet freigeben)
 options:
+  site_location: ""
   kiosk_password: ""
   tablet_ips:
     - "192.168.178.XX"
@@ -27,6 +33,7 @@ options:
   public_base_url: "http://192.168.178.XX:8765"
   first_maintenance_due: ""
 schema:
+  site_location: str
   kiosk_password: str
   tablet_ips:
     - str

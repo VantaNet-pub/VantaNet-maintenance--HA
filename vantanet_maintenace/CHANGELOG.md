@@ -23,3 +23,11 @@
 
 ## 1.0.0
 - Erste Version der Wartungsverwaltung.
+# V1.3.0
+
+- Termin-/Erinnerungsverwaltung und Statistik-/Ereignisreset.
+- Fachkraft-Startdialog, drei Dauermodi, serverseitige Sperren, automatischer Abschluss.
+- Lesende HA-Prüfberichte mit maximal drei Prüfständen und ausgewiesenen Zugriffsgrenzen.
+- A4-PDF mit lokalem Logo, Standort, Fachkraft und Zeitangaben.
+- Docker-Konfiguration, Dokumentation und Regressionstests aktualisiert.
+

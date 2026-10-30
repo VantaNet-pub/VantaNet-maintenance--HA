@@ -9,13 +9,14 @@ logging.basicConfig(level=logging.INFO)
 app=Flask(__name__)
 app.secret_key=secrets.token_bytes(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=timedelta(hours=2))
-DATA=Path('/data/maintenance.json')
-OPTIONS=Path('/data/options.json')
+DATA_DIR=Path(os.environ.get('VANTANET_DATA','/data'))
+DATA=DATA_DIR/'maintenance.json'
+OPTIONS=DATA_DIR/'options.json'
 lock=threading.RLock()
 opts=json.loads(OPTIONS.read_text()) if OPTIONS.exists() else {}
 # Fachkraft-PIN wird einmalig erzeugt und als gesalzener Hash gespeichert.
 # Kein PIN in der App-Konfiguration oder im Repository.
-PIN_FILE=Path('/data/technician_pin.json')
+PIN_FILE=DATA_DIR/'technician_pin.json'
 def setup_pin():
     PIN_FILE.parent.mkdir(parents=True,exist_ok=True)
     if PIN_FILE.exists():
@@ -58,7 +59,9 @@ def load():
         try:
             s=json.loads(DATA.read_text());return s
         except (ValueError,OSError):logging.exception('State read failed')
-    s=initial();save(s);return s
+    s=initial()
+    if s['due']>now():s['mode']='home'
+    save(s);return s
 def save(s):
     DATA.parent.mkdir(parents=True,exist_ok=True)
     p=DATA.with_suffix('.tmp');p.write_text(json.dumps(s,ensure_ascii=False,indent=2));p.replace(DATA)
@@ -91,7 +94,7 @@ def begin_visual_reboot(s, reason):
     s['phase'] = 'shutdown'
     s['phase_until'] = now() + 25
     s['last_reboot'] = now()
-    s['next_reboot'] = 0
+    schedule_reboot(s)
     s['stats']['reboots'] += 1
     log(s, reason)
     save(s)
@@ -116,7 +119,7 @@ def tick():
                 nxt, seconds = {'shutdown': ('update', 60), 'update': ('startup', 30), 'startup': ('upload', 0)}[s['phase']]
                 s['phase'] = nxt
                 s['phase_until'] = t + seconds if seconds else 0
-                if nxt == 'upload':
+                if nxt == 'upload' and not s.get('next_reboot'):
                     schedule_reboot(s, t)
                 log(s, 'Phase: ' + nxt)
                 save(s)
@@ -142,7 +145,8 @@ def worker():
 CSS='''*{box-sizing:border-box}body{margin:0;background:#090f1b;color:#eaf0fc;font:16px system-ui,Segoe UI,sans-serif}main{max-width:1050px;margin:5vh auto;padding:24px}.brand{display:flex;align-items:center;gap:15px}.brand img{width:54px;height:54px;object-fit:contain}h1{font-size:clamp(24px,4vw,38px);margin:10px 0}h2{font-size:20px}p,small{color:#a5b2c9}.card{background:#121d2d;border:1px solid #263751;border-radius:16px;padding:24px;margin:18px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.stat{background:#17263a;padding:18px;border-radius:12px}.stat b{display:block;font-size:22px;margin-top:8px}button,.btn{border:0;border-radius:10px;background:#2174f5;color:white;padding:13px 18px;font-size:16px;cursor:pointer}button.secondary{background:#273b56}button.danger{background:#ab3a4d}input{width:100%;padding:14px;background:#0c1524;color:white;border:1px solid #38506f;border-radius:9px;margin:12px 0}progress{width:100%;height:20px;accent-color:#2687ff}code,pre{font-family:ui-monospace,monospace;color:#9bc3ff;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#0a1422;padding:16px;border-radius:10px;max-height:220px;overflow:auto}.muted{color:#9aaac3}.alert{color:#ffbd74}.actions{display:flex;gap:10px;flex-wrap:wrap}.center{text-align:center;padding-top:10vh}.center .brand{justify-content:center}a{color:#80b7ff}'''
 BASE_HTML='''<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VantaNet Maintenance</title><style>'''+CSS+'''</style></head><body><main>{% block content %}{% endblock %}</main></body></html>'''
 def page(content,**ctx):
-    return render_template_string(BASE_HTML.replace('{% block content %}{% endblock %}',content),logo=LOGO,**ctx)
+    logo='../../assets/logo.png' if request.path.startswith('/display/') else 'assets/logo.png'
+    return render_template_string(BASE_HTML.replace('{% block content %}{% endblock %}',content),logo=logo,**ctx)
 @app.after_request
 def security_headers(response):
     response.headers['Cache-Control']='no-store'
@@ -198,8 +202,8 @@ def display(mode):
     if mode not in ('notice','upload'):abort(404)
     with lock:s=state.copy()
     if mode=='notice':
-        return page('''<div class="center"><div class="brand"><img src="{{logo}}" alt="VantaNet"><h1>VantaNet</h1></div><div class="card"><p class="alert">WARTUNG ERFORDERLICH</p><h1>Halbjährliche Wartung fällig</h1><p>Die regelmäßige Wartung Ihrer Home-Assistant-Anlage ist fällig. Bitte eine Fachkraft verständigen.</p><button onclick="ack()">Okay · in 24 Stunden erinnern</button><p id="result"></p></div></div><script>async function ack(){const r=await fetch(location.pathname.replace('/display/notice','/api/ack')+location.search,{method:'POST'});if(r.ok){document.getElementById('result').textContent='Hinweis bestätigt. Dashboard wird geöffnet …';setTimeout(()=>{window.location.replace({{ dashboard_url|tojson }});},1200);}else{document.getElementById('result').textContent='Bestätigung fehlgeschlagen';}}</script>''',dashboard_url=HA+DASH)
-    return page('''<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>Systemwartung</h1><p>VantaNet · Datenverarbeitung</p></div></div><div class="card" id="screen"><h2 id="phase">UPLOADING</h2><p id="sub">Systemkomponenten werden verarbeitet</p><progress id="bar" max="100" value="0"></progress><p id="pct">0 %</p><p>Geschätzte Restzeit: <span id="eta">—</span></p><pre id="logs"></pre><p class="muted">Verarbeitung läuft. Bitte Display eingeschaltet lassen.</p></div><script>const paths=['/config/.storage/core.config_entries','/srv/vantanet/modules/cache','/data/backup/index','/var/lib/services/runtime','/config/www/assets','/srv/vantanet/system/registry'];const verbs=['UPLOADING','VERIFYING','SYNCING','DELETING','BACKING UP'];async function refresh(){try{let r=await fetch(location.pathname.replace('/display/upload','/api/status')+location.search,{cache:'no-store'});let s=await r.json();if(s.mode==='home'){window.location.replace({{ dashboard_url|tojson }});return;}let phase=s.phase||'upload';document.getElementById('phase').textContent=({shutdown:'SHUTTING DOWN',update:'SYSTEM UPDATE',startup:'STARTING VANTANET',upload:'UPLOADING'})[phase];document.getElementById('bar').value=s.progress;document.getElementById('pct').textContent=s.progress+' %';document.getElementById('eta').textContent=s.remaining_minutes+' Minuten';document.getElementById('sub').textContent=phase==='startup'?'VantaNet wird gestartet':phase==='shutdown'?'Dienste werden beendet':phase==='update'?'Systemkomponenten werden aktualisiert':'Systemkomponenten werden verarbeitet';if(phase==='startup'){document.getElementById('logs').textContent='VantaNet · INITIALIZING SERVICES';}else if(phase==='upload'){let p=paths[Math.floor(Math.random()*paths.length)];let v=verbs[Math.floor(Math.random()*verbs.length)];let el=document.getElementById('logs');el.textContent=(el.textContent+'\\n'+v+' '+p).trim().split('\\n').slice(-3).join('\\n');}else{document.getElementById('logs').textContent=phase==='shutdown'?'STOPPING SERVICES\\nSAVING STATE': 'CHECKING PACKAGES\\nVERIFYING INTEGRITY';}}catch(e){document.getElementById('sub').textContent='Statusverbindung unterbrochen';}}refresh();setInterval(refresh,4000)</script>''',dashboard_url=HA+DASH)
+        return page('''<div class="center"><div class="brand"><img src="{{logo}}" alt="VantaNet"><h1>VantaNet</h1></div><div class="card"><p class="alert">WARTUNG ERFORDERLICH</p><h1>Halbjährliche Wartung fällig</h1><p>Die regelmäßige Wartung Ihrer Home-Assistant-Anlage ist fällig. Bitte eine Fachkraft verständigen.</p><button onclick="ack()">Okay · in 24 Stunden erinnern</button><p id="result"></p></div></div><script>async function ack(){const r=await fetch(location.pathname.replace('/display/notice','/api/ack')+location.search,{method:'POST'});if(r.ok){const result=await r.json();document.getElementById('result').textContent='Nächste Erinnerung: '+result.next_reminder_text+'. Dashboard wird geöffnet …';setTimeout(()=>{window.location.replace({{ dashboard_url|tojson }});},1200);}else{document.getElementById('result').textContent='Bestätigung fehlgeschlagen';}}</script>''',dashboard_url=HA+DASH)
+    return page('''<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>Systemwartung</h1><p>VantaNet · Datenverarbeitung</p></div></div><div class="card" id="screen"><h2 id="phase">UPLOADING</h2><p id="sub">Systemkomponenten werden verarbeitet</p><progress id="bar" max="100" value="0"></progress><p id="pct">0 %</p><p>Geschätzte Restzeit: <span id="eta">—</span></p><pre id="logs"></pre><p class="muted">VISUELLE SIMULATION · Keine realen Uploads, Löschungen, Updates oder Systemneustarts. Bitte Display eingeschaltet lassen.</p></div><script>const paths=['/config/.storage/core.config_entries','/srv/vantanet/modules/cache','/data/backup/index','/var/lib/services/runtime','/config/www/assets','/srv/vantanet/system/registry'];const verbs=['UPLOADING','VERIFYING','SYNCING','DELETING','BACKING UP'];async function refresh(){try{let r=await fetch(location.pathname.replace('/display/upload','/api/status')+location.search,{cache:'no-store'});let s=await r.json();if(s.mode==='home'){window.location.replace({{ dashboard_url|tojson }});return;}let phase=s.phase||'upload';document.getElementById('phase').textContent=({shutdown:'SHUTTING DOWN',update:'SYSTEM UPDATE',startup:'STARTING VANTANET',upload:'UPLOADING'})[phase];document.getElementById('bar').value=s.progress;document.getElementById('pct').textContent=s.progress+' %';document.getElementById('eta').textContent=s.remaining_minutes+' Minuten';document.getElementById('sub').textContent=phase==='startup'?'VantaNet wird gestartet':phase==='shutdown'?'Dienste werden beendet':phase==='update'?'Systemkomponenten werden aktualisiert':'Systemkomponenten werden verarbeitet';if(phase==='startup'){document.getElementById('logs').textContent='VantaNet · INITIALIZING SERVICES';}else if(phase==='upload'){let p=paths[Math.floor(Math.random()*paths.length)];let v=verbs[Math.floor(Math.random()*verbs.length)];let el=document.getElementById('logs');el.textContent=(el.textContent+'\\n'+v+' '+p).trim().split('\\n').slice(-3).join('\\n');}else{document.getElementById('logs').textContent=phase==='shutdown'?'STOPPING SERVICES\\nSAVING STATE': 'CHECKING PACKAGES\\nVERIFYING INTEGRITY';}}catch(e){document.getElementById('sub').textContent='Statusverbindung unterbrochen';}}refresh();setInterval(refresh,4000)</script>''',dashboard_url=HA+DASH)
 @app.get('/api/status')
 def status():
     display_auth()
@@ -210,9 +214,12 @@ def ack():
     display_auth()
     with lock:
         if state['mode']!='notice':return jsonify(ok=False),409
+        if not state.get('reminder_enabled',True):return jsonify(ok=False),409
         state['ack_until']=now()+86400;state['stats']['acknowledged']+=1;log(state,'Hinweis für 24 Stunden bestätigt');save(state);s=state.copy()
     threading.Thread(target=tablet,args=('home',s),daemon=True).start()
-    return jsonify(ok=True)
+    return jsonify(ok=True,next_reminder=s['ack_until'],next_reminder_text=stamp(s['ack_until']))
+from maintenance_v130 import install
+install(globals())
 if __name__=='__main__':
     logging.info('Fachkraft-PIN ist fest eingerichtet')
     threading.Thread(target=worker,daemon=True).start()
