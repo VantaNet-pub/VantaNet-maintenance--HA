@@ -12,15 +12,33 @@ import app as m
 import reports
 
 
+class ImmediateThread:
+    def __init__(self,target,args=(),kwargs=None,**unused):
+        self.target=target;self.args=args;self.kwargs=kwargs or {}
+    def start(self):self.target(*self.args,**self.kwargs)
+
+
 class MaintenanceTests(unittest.TestCase):
     def setUp(self):
+        self.old_lock_entity=m.opts.get('maintenance_lock_entity')
+        m.opts['maintenance_lock_entity']=''
         m.state.clear();m.state.update(m.initial())
         m.state.update(reports=[],reminder_enabled=True,technician={},last_maintenance=None)
         self.client=m.app.test_client()
         with self.client.session_transaction() as s:s.update(tech=True,csrf='test')
         self.tablets=patch('app.tablet',return_value=[])
+        self.thread_patch=patch('maintenance_v130.threading.Thread',ImmediateThread)
+        self.collect_patch=patch('maintenance_v130.collect',return_value={
+            'id':'automatic-report','created':m.now(),'checks':[{
+                'area':'System / Core','source':'/core/info','status':'geprüft','detail':'Version geprüft'}]})
+        self.thread_patch.start();self.collect_patch.start()
         # install closures hold original tablet; IPS=[] ensures no external I/O.
         m.IPS=[]
+
+    def tearDown(self):
+        self.collect_patch.stop();self.thread_patch.stop()
+        if self.old_lock_entity is None:m.opts.pop('maintenance_lock_entity',None)
+        else:m.opts['maintenance_lock_entity']=self.old_lock_entity
 
     def post(self,action,**kw):
         return self.client.post('/action/'+action,data={'csrf':'test',**kw})
@@ -40,7 +58,9 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(r.status_code,200)
         text=r.get_data(as_text=True)
         self.assertIn('80–120',text);self.assertIn('20–60',text)
-        self.assertNotIn('LOG2',text);self.assertIn('LOG3',text)
+        visible=text.split('<pre>',1)[1].split('</pre>',1)[0]
+        self.assertNotIn('LOG2',visible);self.assertIn('LOG3',visible)
+        self.assertIn('👁️',text);self.assertIn('LOG0',text)
 
     def test_duration_modes(self):
         for mode,lo,hi in [('auto',80,120),('quick',20,60),('manual',1,1)]:
@@ -89,7 +109,7 @@ class MaintenanceTests(unittest.TestCase):
         for _ in range(20):
             m.schedule_reboot(m.state,1000)
             self.assertTrue(1900<=m.state['next_reboot']<=2200)
-        m.begin_visual_reboot(m.state,'Test')
+        m.begin_sfrp(m.state,'Test')
         scheduled=m.state['next_reboot']
         self.assertTrue(m.now()+900<=scheduled<=m.now()+1200)
         m.state.update(phase='startup',phase_until=m.now()-1)
@@ -100,32 +120,40 @@ class MaintenanceTests(unittest.TestCase):
         import io
         self.assertEqual(self.client.get('/handover.pdf').status_code,409)
         self.start();self.post('finish')
-        # Include longest ordinary check summaries for pagination QA.
-        m.state['reports']=[reports.collect()]
         r=self.client.get('/handover.pdf')
         self.assertEqual(r.status_code,200)
         reader=PdfReader(io.BytesIO(r.data))
         self.assertAlmostEqual(float(reader.pages[0].mediabox.width),595.276,places=2)
         text=''.join(p.extract_text() for p in reader.pages)
         self.assertIn('Erika Muster',text);self.assertIn('Berlin',text)
-        self.assertIn('Simulationen',text)
+        self.assertIn('Systemprüfung',text)
         output=os.environ.get('VANTANET_TEST_PDF')
         if output:Path(output).write_bytes(r.data)
+        report=m.state['reports'][-1]
+        r=self.client.get('/report/'+report['id']+'.pdf')
+        self.assertEqual(r.status_code,200)
+        report_text=''.join(p.extract_text() for p in PdfReader(io.BytesIO(r.data)).pages)
+        self.assertIn('Home Assistant Prüfbericht',report_text)
+        self.assertIn('Version geprüft',report_text)
+        report_output=os.environ.get('VANTANET_TEST_REPORT_PDF')
+        if report_output:Path(report_output).write_bytes(r.data)
 
     def test_display_and_token(self):
         self.assertEqual(self.client.get('/api/status?token=wrong').status_code,403)
         r=self.client.get('/display/upload?token='+m.state['token'])
-        self.assertIn('VISUELLE SIMULATION',r.get_data(as_text=True))
+        self.assertIn('Home-Assistant-Systemprüfung',r.get_data(as_text=True))
         self.assertEqual(self.client.get('/assets/logo.png').status_code,200)
 
-    def test_report_retention(self):
-        # Deterministic synchronous thread adapter exercises the real route.
-        class Immediate:
-            def __init__(self,target,**kwargs):self.target=target
-            def start(self):self.target()
-        with patch('maintenance_v130.threading.Thread',Immediate),patch('maintenance_v130.collect',side_effect=[{'id':str(i),'checks':[],'created':1} for i in range(5)]):
-            for _ in range(5):self.assertEqual(self.post('report').status_code,302)
+    def test_automatic_report_and_retention(self):
+        self.collect_patch.stop()
+        with patch('maintenance_v130.collect',side_effect=[{'id':str(i),'checks':[],'created':1} for i in range(5)]):
+            for _ in range(5):
+                m.state['mode']='home'
+                self.assertEqual(self.start().status_code,302)
         self.assertEqual([x['id'] for x in m.state['reports']],['2','3','4'])
+        self.assertEqual(self.post('report').status_code,404)
+        self.collect_patch=patch('maintenance_v130.collect',return_value={'id':'unused','created':1,'checks':[]})
+        self.collect_patch.start()
 
     def test_state_survives_reload(self):
         self.start()
@@ -133,6 +161,25 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(saved['started'],m.state['started'])
         self.assertEqual(saved['technician']['location'],'Berlin')
         self.assertEqual(saved['duration'],60)
+
+    def test_maintenance_lock_entity(self):
+        m.opts['maintenance_lock_entity']='switch.wartungsmodus'
+        response=Mock(ok=True)
+        with patch.dict(os.environ,{'SUPERVISOR_TOKEN':'TEST'}),patch('app.requests.post',return_value=response) as post:
+            self.start();self.post('finish')
+        self.assertEqual(post.call_count,2)
+        self.assertTrue(post.call_args_list[0].args[0].endswith('/homeassistant/turn_on'))
+        self.assertTrue(post.call_args_list[1].args[0].endswith('/homeassistant/turn_off'))
+        self.assertEqual(post.call_args_list[0].kwargs['json'],{'entity_id':'switch.wartungsmodus'})
+        events=' '.join(e['text'] for e in m.state['events'])
+        self.assertIn('Wartungssperre aktiviert',events)
+        self.assertIn('Wartungssperre deaktiviert',events)
+
+    def test_invalid_maintenance_lock_entity_is_not_called(self):
+        m.opts['maintenance_lock_entity']='invalid entity'
+        with patch.dict(os.environ,{'SUPERVISOR_TOKEN':'TEST'}),patch('app.requests.post') as post:self.start()
+        post.assert_not_called()
+        self.assertTrue(any('ungültige Entitäts-ID' in e['text'] for e in m.state['events']))
 
     def test_legacy_state_migration(self):
         # Existing v1.2 state gains defaults without losing counters or PIN.

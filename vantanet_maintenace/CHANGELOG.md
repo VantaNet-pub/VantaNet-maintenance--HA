@@ -23,6 +23,14 @@
 
 ## 1.0.0
 - Erste Version der Wartungsverwaltung.
+# V1.3.1
+
+- Home-Assistant-Prüfung startet automatisch mit jeder Wartung; manueller Prüfbutton entfernt.
+- Eigener A4-Prüfbericht pro Prüfstand und vollständig neu gestaltete A4-Wartungsübergabe.
+- Drei letzte Ereignisse direkt sichtbar; vollständige Ereignisliste über Augen-Symbol im Popup.
+- Wartungsanzeige zeigt ausschließlich den tatsächlichen Prüfstatus und die zurückgegebenen Ergebnisse.
+- Optionale Wartungssperre schaltet eine konfigurierte Home-Assistant-Entität beim Start ein und beim Abschluss aus.
+
 # V1.3.0
 
 - Termin-/Erinnerungsverwaltung und Statistik-/Ereignisreset.

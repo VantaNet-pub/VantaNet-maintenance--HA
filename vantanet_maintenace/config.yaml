@@ -1,5 +1,5 @@
 name: VantaNet Maintenance
-version: "1.3.0"
+version: "1.3.1"
 slug: vantanet_maintenance
 description: Halbjährliche Wartung, Tablet-Steuerung und Fachkraft-PIN
 url: https://vantanet.net
@@ -25,6 +25,7 @@ ports_description:
   8099/tcp: Lokaler Zugriff auf Display-Seiten (nicht ins Internet freigeben)
 options:
   site_location: ""
+  maintenance_lock_entity: ""
   kiosk_password: ""
   tablet_ips:
     - "192.168.178.XX"
@@ -34,6 +35,7 @@ options:
   first_maintenance_due: ""
 schema:
   site_location: str
+  maintenance_lock_entity: str?
   kiosk_password: str
   tablet_ips:
     - str
