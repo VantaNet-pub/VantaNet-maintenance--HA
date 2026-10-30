@@ -1,9 +1,7 @@
-# GitHub öffentlich verwalten
+# Repository V1.3.0
 
-1. Auf GitHub ein **öffentliches** Repository `vantanet-maintenance` anlegen.
-2. `repository.yaml`, `vantanet_maintenance/`, `INSTALL.md` und `GITHUB.md` hochladen. `repository.yaml`-URL an deinen tatsächlichen Repository-Pfad anpassen.
-3. Für neue Versionen `version` in `config.yaml` erhöhen und Änderungen committen.
-4. Ein öffentliches GitHub-Repository kann nicht einfach als App-Store-Quelle ohne Authentifizierung eingetragen werden. Nutze zunächst ZIP-Releases und Studio Code Server; später ist ein Deploy-Key-basiertes Deployment möglich.
-5. **Keine** Zugangsdaten, PINs, Passwörter oder öffentlichen Display-URLs mit Tokens committen.
+`repository.yaml` bleibt im Hauptordner. Der App-Ordner `vantanet_maintenace` enthält `config.yaml`, `build.yaml`, `Dockerfile`, die drei Python-Module und `assets/logo.png`. Diese Struktur vollständig übernehmen. Der App-Slug bleibt `vantanet_maintenance`.
 
-Eine Veröffentlichung auf deinem GitHub-Konto ist in diesem Paket **nicht** erfolgt.
+Nur Quellen, Logo, Dokumentation und Tests versionieren. Keine `/data`-Dateien, PIN-Hashes, Passwörter, Tokens, produktiven Prüfberichte oder Fachkraftdaten einchecken. Die ZIP enthält keine Laufzeitdaten.
+
+Installation: `INSTALL.md`. Bedienung und Rechte: `vantanet_maintenace/DOCS.md`. Die Veröffentlichung oder ein Deployment wird durch dieses Paket nicht ausgeführt.
