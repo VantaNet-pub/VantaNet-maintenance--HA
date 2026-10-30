@@ -52,7 +52,7 @@ def initial():
         if opts.get('first_maintenance_due'):
             due=int(datetime.fromisoformat(opts['first_maintenance_due']).astimezone().timestamp())
     except ValueError: logging.warning('Invalid first_maintenance_due; due immediately')
-    return {'mode':'notice','due':due,'started':None,'finished':None,'duration':random.randint(40,120)*60,'ack_until':0,'last_reboot':0,'phase_until':0,'phase':'upload','events':[],'stats':{'completed':0,'started':0,'acknowledged':0,'reboots':0},'token':secrets.token_urlsafe(24)}
+    return {'mode':'notice','due':due,'started':None,'finished':None,'duration':random.randint(40,120)*60,'ack_until':0,'last_reboot':0,'next_reboot':0,'phase_until':0,'phase':'upload','events':[],'stats':{'completed':0,'started':0,'acknowledged':0,'reboots':0},'token':secrets.token_urlsafe(24)}
 def load():
     if DATA.exists():
         try:
@@ -82,26 +82,50 @@ def tablet(mode,s):
             results.append({'tablet':ip,'ok':r.ok,'status':r.status_code})
         except requests.RequestException as e:results.append({'tablet':ip,'ok':False,'error':str(e)[:140]})
     return results
+def schedule_reboot(s, base=None):
+    s['next_reboot'] = (now() if base is None else base) + random.randint(15 * 60, 20 * 60)
+
+def begin_visual_reboot(s, reason):
+    if s['mode'] != 'upload':
+        return False
+    s['phase'] = 'shutdown'
+    s['phase_until'] = now() + 25
+    s['last_reboot'] = now()
+    s['next_reboot'] = 0
+    s['stats']['reboots'] += 1
+    log(s, reason)
+    save(s)
+    return True
+
 def action_start():
     with lock:
         if state['mode']=='upload':return []
         state.update(mode='upload',started=now(),duration=random.randint(40,120)*60,phase='upload',phase_until=0,last_reboot=now(),ack_until=0)
-        state['stats']['started']+=1;log(state,'Wartung gestartet');save(state);s=state.copy()
+        schedule_reboot(state);state['stats']['started']+=1;log(state,'Wartung gestartet');save(state);s=state.copy()
     return tablet('upload',s)
 def action_finish():
     with lock:
-        state.update(mode='home',finished=now(),due=six_months(now()),started=None,ack_until=0,phase='upload',phase_until=0)
+        state.update(mode='home',finished=now(),due=six_months(now()),started=None,ack_until=0,phase='upload',phase_until=0,next_reboot=0)
         state['stats']['completed']+=1;log(state,'Wartung abgeschlossen');save(state);s=state.copy()
     return tablet('home',s)
 def tick():
     with lock:
         t=now();s=state
         if s['mode']=='upload':
-            if s['phase']!='upload' and t>=s['phase_until']:
-                nxt={'shutdown':('update',60),'update':('startup',30),'startup':('upload',0)}[s['phase']]
-                s['phase']=nxt;s['phase_until']=t+({'update':60,'startup':30}.get(nxt,0));log(s,'Phase: '+nxt);save(s)
-            elif s['phase']=='upload' and t-s.get('last_reboot',t)>=900:
-                s['phase']='shutdown';s['phase_until']=t+25;s['last_reboot']=t;s['stats']['reboots']+=1;log(s,'Visueller Neustart');save(s)
+            if s['phase'] != 'upload' and t >= s['phase_until']:
+                nxt, seconds = {'shutdown': ('update', 60), 'update': ('startup', 30), 'startup': ('upload', 0)}[s['phase']]
+                s['phase'] = nxt
+                s['phase_until'] = t + seconds if seconds else 0
+                if nxt == 'upload':
+                    schedule_reboot(s, t)
+                log(s, 'Phase: ' + nxt)
+                save(s)
+            elif s['phase'] == 'upload':
+                if not s.get('next_reboot'):
+                    schedule_reboot(s, t)
+                    save(s)
+                elif t >= s['next_reboot']:
+                    begin_visual_reboot(s, 'Automatischer visueller Neustart')
         elif s['mode']=='home' and t>=s['due']:
             s['mode']='notice';log(s,'Wartung fällig');save(s);return ('notice',s.copy())
         elif s['mode']=='notice' and s.get('ack_until',0) and t>=s['ack_until']:
@@ -132,7 +156,7 @@ def index():
         return page('''<div class="center"><div class="brand"><img src="{{logo}}" alt="VantaNet"><h1>VantaNet Maintenance</h1></div><div class="card" style="max-width:430px;margin:35px auto"><h2>Fachkraft-Zugang</h2><p>PIN eingeben, um Wartung und Tablets zu verwalten.</p>{% if error %}<p class="alert">{{error}}</p>{% endif %}<form method="post" action="login"><input type="password" name="pin" placeholder="Fachkraft-PIN" required autocomplete="off"><button>Anmelden</button></form></div></div>''',error=request.args.get('error',''))
     with lock:s=json.loads(json.dumps(state))
     if 'csrf' not in session:session['csrf']=secrets.token_urlsafe(24)
-    return page('''<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>Fachkraft-Verwaltung · Halbjährliche Wartung</p></div></div><div class="grid"><div class="stat">Status<b>{{s.mode|upper}}</b></div><div class="stat">Nächste Wartung<b>{{due}}</b></div><div class="stat">Abgeschlossene Wartungen<b>{{s.stats.completed}}</b></div><div class="stat">Visuelle Neustarts<b>{{s.stats.reboots}}</b></div></div><div class="card"><h2>Wartungssteuerung</h2><p>Upload-Fortschritt: {{pct}} % · Restzeit: {{remaining}}</p><progress value="{{pct}}" max="100"></progress><p>Aktuelle Phase: {{s.phase}} · Letzter Abschluss: {{finished}}</p><div class="actions"><form method="post" action="action/start"><input type="hidden" name="csrf" value="{{csrf}}"><button>Wartung starten</button></form><form method="post" action="action/finish" onsubmit="return confirm('Wartung wirklich abschließen?')"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Wartung abschließen</button></form><form method="post" action="action/show_notice"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Wartungshinweis anzeigen</button></form><form method="post" action="action/reboot"><input type="hidden" name="csrf" value="{{csrf}}"><button class="danger">SFRP · Bildschirm-Neustart</button></form></div></div><div class="card"><h2>Statistik</h2><p>Wartungen gestartet: {{s.stats.started}} · Bestätigungen (24 h): {{s.stats.acknowledged}}</p><h2>Letzte Ereignisse</h2><pre>{% for e in events %}{{e}}\n{% endfor %}</pre><p class="muted">Upload-/Update-Meldungen sind visuelle Statusmeldungen, keine tatsächlichen Dateioperationen.</p></div><form method="post" action="logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Abmelden</button></form><script>setTimeout(()=>location.reload(),15000)</script>''',s=s,due=stamp(s['due']),finished=stamp(s.get('finished')),pct=progress(s),remaining=(str(max(0,(s['duration']-(now()-s['started']))//60))+' Minuten') if s.get('started') else '—',events=[stamp(e['at'])+'  '+e['text'] for e in s.get('events',[])[-3:]][::-1],csrf=session['csrf'])
+    return page('''<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>Fachkraft-Verwaltung · Halbjährliche Wartung</p></div></div><div class="grid"><div class="stat">Status<b>{{s.mode|upper}}</b></div><div class="stat">Nächste Wartung<b>{{due}}</b></div><div class="stat">Abgeschlossene Wartungen<b>{{s.stats.completed}}</b></div><div class="stat">Visuelle Neustarts<b>{{s.stats.reboots}}</b></div></div><div class="card"><h2>Wartungssteuerung</h2>{% if message %}<p class="alert">{{message}}</p>{% endif %}<p>Upload-Fortschritt: {{pct}} % · Restzeit: {{remaining}}</p><progress value="{{pct}}" max="100"></progress><p>Aktuelle Phase: {{s.phase}} · Letzter Abschluss: {{finished}}</p><div class="actions"><form method="post" action="action/start"><input type="hidden" name="csrf" value="{{csrf}}"><button>Wartung starten</button></form><form method="post" action="action/finish" onsubmit="return confirm('Wartung wirklich abschließen?')"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Wartung abschließen</button></form><form method="post" action="action/show_notice"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Wartungshinweis anzeigen</button></form><form method="post" action="action/reboot"><input type="hidden" name="csrf" value="{{csrf}}"><button class="danger">SFRP · Bildschirm-Neustart</button></form></div></div><div class="card"><h2>Statistik</h2><p>Wartungen gestartet: {{s.stats.started}} · Bestätigungen (24 h): {{s.stats.acknowledged}}</p><h2>Letzte Ereignisse</h2><pre>{% for e in events %}{{e}}\n{% endfor %}</pre><p class="muted">Upload-/Update-Meldungen sind visuelle Statusmeldungen, keine tatsächlichen Dateioperationen.</p></div><form method="post" action="logout"><input type="hidden" name="csrf" value="{{csrf}}"><button class="secondary">Abmelden</button></form><script>setTimeout(()=>location.reload(),15000)</script>''',s=s,due=stamp(s['due']),finished=stamp(s.get('finished')),pct=progress(s),remaining=(str(max(0,(s['duration']-(now()-s['started']))//60))+' Minuten') if s.get('started') else '—',events=[stamp(e['at'])+'  '+e['text'] for e in s.get('events',[])[-3:]][::-1],csrf=session['csrf'],message=request.args.get('message',''))
 failures={}
 @app.post('/login')
 def login():
@@ -157,7 +181,12 @@ def action(name):
         tablet('notice',s)
     elif name=='reboot':
         with lock:
-            if state['mode']=='upload':state['phase']='shutdown';state['phase_until']=now()+25;state['last_reboot']=now();state['stats']['reboots']+=1;log(state,'SFRP: visueller Neustart');save(state)
+            if state['mode'] != 'upload':
+                return redirect('../?message=Keine+laufende+Wartung')
+            if state['phase'] != 'upload':
+                return redirect('../?message=Neustart+laeuft+bereits')
+            begin_visual_reboot(state, 'SFRP: visueller Neustart erzwungen')
+        return redirect('../?message=SFRP+Neustart+gestartet')
     else:abort(404)
     return redirect('../')
 def display_auth():
