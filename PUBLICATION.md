@@ -1,6 +1,6 @@
 # Vorbereitung einer öffentlichen Veröffentlichung
 
-V1.3.3 ist technisch für eine spätere Veröffentlichung strukturiert, wird durch dieses Paket aber nicht veröffentlicht.
+V1.3.4 ist technisch für eine spätere Veröffentlichung strukturiert, wird durch dieses Paket aber nicht veröffentlicht.
 
 Vor einem öffentlichen Release:
 
