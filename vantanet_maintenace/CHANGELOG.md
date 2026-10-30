@@ -1,3 +1,6 @@
+## 1.2.2
+- Wartungfällig Anzeige verändert
+
 ## 1.2.1
 - Fehlende build.yaml ergänzt.
 - Dockerfile auf architekturspezifisches BUILD_FROM umgestellt.
