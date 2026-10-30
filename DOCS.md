@@ -1,0 +1,1 @@
+Siehe `INSTALL.md` im ZIP für die vollständige Einrichtung. Die Oberfläche ist PIN-geschützt; die Display-URLs verwenden ein separates Zugriffstoken. Upload-, Lösch- und Neustartmeldungen sind ausschließlich visuell.

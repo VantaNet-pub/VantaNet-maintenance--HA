@@ -1,0 +1,37 @@
+name: VantaNet Maintenance
+version: "1.2.1"
+slug: vantanet_maintenance
+description: Halbjährliche Wartung, Tablet-Steuerung und Fachkraft-PIN
+url: https://vantanet.net
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: services
+boot: auto
+init: false
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:tools
+panel_title: VantaNet Wartung
+ports:
+  8099/tcp: 8765
+ports_description:
+  8099/tcp: Lokaler Zugriff auf Display-Seiten (nicht ins Internet freigeben)
+options:
+  kiosk_password: ""
+  tablet_ips:
+    - "192.168.4.60"
+    - "192.168.4.61"
+  home_assistant_url: "http://192.168.4.2:8123"
+  dashboard_path: "/home-db/0?hide_sidebar"
+  public_base_url: "http://192.168.4.2:8765"
+  first_maintenance_due: ""
+schema:
+  kiosk_password: str
+  tablet_ips:
+    - str
+  home_assistant_url: url
+  dashboard_path: str
+  public_base_url: url
+  first_maintenance_due: str?
