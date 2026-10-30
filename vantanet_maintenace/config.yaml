@@ -1,5 +1,5 @@
 name: VantaNet Maintenance
-version: "1.2.2"
+version: "1.2.3"
 slug: vantanet_maintenance
 description: Halbjährliche Wartung, Tablet-Steuerung und Fachkraft-PIN
 url: https://vantanet.net
@@ -21,11 +21,10 @@ ports_description:
 options:
   kiosk_password: ""
   tablet_ips:
-    - "192.168.4.60"
-    - "192.168.4.61"
-  home_assistant_url: "http://192.168.4.2:8123"
-  dashboard_path: "/home-db/0?hide_sidebar"
-  public_base_url: "http://192.168.4.2:8765"
+    - "192.168.178.XX"
+  home_assistant_url: "http://192.168.178.XX:8123"
+  dashboard_path: "/lovelace/0"
+  public_base_url: "http://192.168.178.XX:8765"
   first_maintenance_due: ""
 schema:
   kiosk_password: str
