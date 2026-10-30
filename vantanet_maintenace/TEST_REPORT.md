@@ -1,10 +1,10 @@
-# Prüfprotokoll V1.3.1
+# Prüfprotokoll V1.3.3
 
 Stand: 30.10.2026. Grundlage: unveränderte Original-ZIP `VantaNet-maintenance--HA-main.zip`, lokal entpackt und bearbeitet. Testumgebung: Windows, Python 3.12.10. Alle folgenden Prüfungen beziehen sich auf den ausgelieferten Quellstand.
 
 ## Ergebnis
 
-19 automatisierte Tests bestanden:
+23 automatisierte Tests bestanden:
 
 1. Start-/Hinweissperren während laufender Wartung und automatischer, einmaliger Abschluss.
 2. PIN-Sitzungsanforderung und CSRF-Abweisung für geschützte Aktionen/PDF.
@@ -23,8 +23,12 @@ Stand: 30.10.2026. Grundlage: unveränderte Original-ZIP `VantaNet-maintenance--
 15. Ungültige Antworten und Zeitüberschreitungen.
 16. Ausschluss von Testpasswörtern und Tokens aus Berichten.
 17. 401/403, Serverfehler und fehlender Supervisor-Token.
-18. Wartungssperre aktiviert die konfigurierte Entität beim Start und deaktiviert sie beim Abschluss.
-19. Ungültige Entitäts-IDs werden abgewiesen und als Ereignis protokolliert.
+18. Supervisor-Token über aktuellen und älteren Variablennamen sowie beide unterstützten HTTP-Header.
+19. Deutsche Winterzeit UTC+1 und Sommerzeit UTC+2.
+20. Nicht aktivierte Installationen werden auf die Aktivierungsseite umgeleitet.
+21. Gültige RSA-Lizenz ist an exakt eine Installations-ID gebunden.
+22. Manipulierte und abgelaufene Lizenzen werden abgewiesen.
+23. Aktivierung wird ohne privaten Schlüssel unter `/data` gespeichert und erneut verifiziert.
 
 Zusätzlich bestanden: Python-Syntaxprüfung aller Module, YAML-Einlesen, Übereinstimmung von Optionen/Schema und Build-Architekturen, erfolgreiche Auslieferung der Verwaltungs- und Displayseiten sowie JavaScript-Syntaxprüfung der gerenderten Skripte mit Node.js.
 

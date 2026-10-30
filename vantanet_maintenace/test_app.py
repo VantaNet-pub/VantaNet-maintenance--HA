@@ -10,6 +10,7 @@ TEST_DATA=tempfile.TemporaryDirectory()
 os.environ['VANTANET_DATA']=TEST_DATA.name
 import app as m
 import reports
+import licensing
 
 
 class ImmediateThread:
@@ -20,8 +21,6 @@ class ImmediateThread:
 
 class MaintenanceTests(unittest.TestCase):
     def setUp(self):
-        self.old_lock_entity=m.opts.get('maintenance_lock_entity')
-        m.opts['maintenance_lock_entity']=''
         m.state.clear();m.state.update(m.initial())
         m.state.update(reports=[],reminder_enabled=True,technician={},last_maintenance=None)
         self.client=m.app.test_client()
@@ -32,13 +31,13 @@ class MaintenanceTests(unittest.TestCase):
             'id':'automatic-report','created':m.now(),'checks':[{
                 'area':'System / Core','source':'/core/info','status':'geprüft','detail':'Version geprüft'}]})
         self.thread_patch.start();self.collect_patch.start()
+        self.license_patch=patch.object(m.LICENSE,'valid',return_value=True)
+        self.license_patch.start()
         # install closures hold original tablet; IPS=[] ensures no external I/O.
         m.IPS=[]
 
     def tearDown(self):
-        self.collect_patch.stop();self.thread_patch.stop()
-        if self.old_lock_entity is None:m.opts.pop('maintenance_lock_entity',None)
-        else:m.opts['maintenance_lock_entity']=self.old_lock_entity
+        self.collect_patch.stop();self.thread_patch.stop();self.license_patch.stop()
 
     def post(self,action,**kw):
         return self.client.post('/action/'+action,data={'csrf':'test',**kw})
@@ -162,24 +161,23 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(saved['technician']['location'],'Berlin')
         self.assertEqual(saved['duration'],60)
 
-    def test_maintenance_lock_entity(self):
-        m.opts['maintenance_lock_entity']='switch.wartungsmodus'
-        response=Mock(ok=True)
-        with patch.dict(os.environ,{'SUPERVISOR_TOKEN':'TEST'}),patch('app.requests.post',return_value=response) as post:
-            self.start();self.post('finish')
-        self.assertEqual(post.call_count,2)
-        self.assertTrue(post.call_args_list[0].args[0].endswith('/homeassistant/turn_on'))
-        self.assertTrue(post.call_args_list[1].args[0].endswith('/homeassistant/turn_off'))
-        self.assertEqual(post.call_args_list[0].kwargs['json'],{'entity_id':'switch.wartungsmodus'})
-        events=' '.join(e['text'] for e in m.state['events'])
-        self.assertIn('Wartungssperre aktiviert',events)
-        self.assertIn('Wartungssperre deaktiviert',events)
+    def test_berlin_timezone_handles_summer_and_winter(self):
+        from datetime import datetime
+        winter=datetime(2026,1,15,12,tzinfo=m.BERLIN)
+        summer=datetime(2026,7,15,12,tzinfo=m.BERLIN)
+        self.assertEqual(winter.utcoffset().total_seconds(),3600)
+        self.assertEqual(summer.utcoffset().total_seconds(),7200)
+        self.assertIn('15.07.2026 12:00',m.stamp(summer.timestamp()))
 
-    def test_invalid_maintenance_lock_entity_is_not_called(self):
-        m.opts['maintenance_lock_entity']='invalid entity'
-        with patch.dict(os.environ,{'SUPERVISOR_TOKEN':'TEST'}),patch('app.requests.post') as post:self.start()
-        post.assert_not_called()
-        self.assertTrue(any('ungültige Entitäts-ID' in e['text'] for e in m.state['events']))
+    def test_unlicensed_install_redirects_to_activation(self):
+        with patch.object(m.LICENSE,'valid',return_value=False):
+            r=self.client.get('/')
+            self.assertEqual(r.status_code,302);self.assertTrue(r.location.endswith('activate'))
+            page=self.client.get('/activate')
+            self.assertEqual(page.status_code,200)
+            self.assertIn(m.LICENSE.installation_id,page.get_data(as_text=True))
+            nested=self.client.get('/display/upload')
+            self.assertEqual(nested.status_code,302);self.assertEqual(nested.location,'../activate')
 
     def test_legacy_state_migration(self):
         # Existing v1.2 state gains defaults without losing counters or PIN.
@@ -219,7 +217,17 @@ class ReportTests(unittest.TestCase):
         with patch.dict(os.environ,{'SUPERVISOR_TOKEN':secret}),patch('reports.requests.get',return_value=response),patch('websocket.create_connection',side_effect=OSError()):
             report=reports.collect()
         self.assertNotIn(secret,json.dumps(report))
-        self.assertIn('Update verfügbar',report['checks'][0]['detail'])
+        self.assertTrue(any('Update verfügbar' in c['detail'] for c in report['checks']))
+
+    def test_legacy_token_and_compatible_headers(self):
+        response=Mock(status_code=200)
+        response.json.return_value={'result':'ok','data':{'version':'2026.10.1','version_latest':'2026.10.1'}}
+        with patch.dict(os.environ,{'HASSIO_TOKEN':'LEGACY'},clear=True),patch('reports.requests.get',return_value=response) as get,patch('websocket.create_connection',side_effect=OSError()):
+            report=reports.collect()
+        headers=get.call_args_list[0].kwargs['headers']
+        self.assertEqual(headers['Authorization'],'Bearer LEGACY')
+        self.assertEqual(headers['X-Supervisor-Token'],'LEGACY')
+        self.assertEqual(report['checks'][0]['status'],'geprüft')
 
     def test_permission_and_outages(self):
         for status,expected in [(403,'nicht berechtigt'),(401,'nicht berechtigt'),(500,'nicht verfügbar')]:
@@ -236,6 +244,30 @@ class ReportTests(unittest.TestCase):
         text=json.dumps(r)
         self.assertNotIn('SECRET_CONTENT',text)
         self.assertTrue(any(c['status']=='geprüft' and 'Bytes' in c['detail'] for c in r['checks']))
+
+
+class LicenseTests(unittest.TestCase):
+    TOKEN='eyJwcm9kdWN0IjoidmFudGFuZXQtbWFpbnRlbmFuY2UiLCJpbnN0YWxsYXRpb25faWQiOiIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMSIsImN1c3RvbWVyIjoiVGVzdGt1bmRlIiwiaXNzdWVkX2F0IjoiMjAyNi0xMC0zMFQxNjoxMToyMi44NjJaIiwiZXhwaXJlcyI6IjIwOTktMTItMzEifQ.WLyqPO9TrFKp8mkfD86kqLOVGm80eJWCS6tASRExFlNsCWXrvdjN14iqAvXKK-nMa6-v3Ju9A3Qr7ISlSZ8vLC4iurCRgKEmOA0WmBvjkdxC1LhoFEgDiDNfLDWKqEl_eWHYQJlbMywh0eQvzFpZkPQaIbNk4TZrQlGCW-_yx2JY9kf2f_MHbauNJ4koTwfy8Kl0jhSd9jG93AY8V57HT0ybelNYQeWTr_9W0g4dRWMus5gr_UY6GjWT9bykC25aQT3atp2d7voFYEZB_SrISmKTk3my6SkcoJ_xJMfldHfh1P9xyd30g8Qgaki62BuYkwZP3xgAK36UsCN1NEGayslHBNoTVwzx_6GlVluyRiDqzXjm8Jc_2feCQnwrfoknmS4TfUG5BW8QEppQzlm1urcFcWFRu1SA9D-PVhZsYwtX68ivKI8TCsS_9LAd-95PfCCptjd98VJIa870UCrssXhT5PRPCEkDmywtC667qBo7z_USmy9RQ-7i8fH8s5w4'
+
+    def test_signed_license_is_bound_to_installation(self):
+        from datetime import date
+        payload=licensing.verify_token(self.TOKEN,'00000000000000000000000000000001',date(2026,10,30))
+        self.assertEqual(payload['customer'],'Testkunde')
+        self.assertIsNone(licensing.verify_token(self.TOKEN,'00000000000000000000000000000002',date(2026,10,30)))
+
+    def test_tampered_or_expired_license_is_rejected(self):
+        from datetime import date
+        self.assertIsNone(licensing.verify_token(self.TOKEN[:-1]+'A','00000000000000000000000000000001',date(2026,10,30)))
+        self.assertIsNone(licensing.verify_token(self.TOKEN,'00000000000000000000000000000001',date(2100,1,1)))
+
+    def test_license_manager_persists_valid_activation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager=licensing.LicenseManager(tmp)
+            manager.installation_id='00000000000000000000000000000001'
+            self.assertIsNotNone(manager.activate(self.TOKEN))
+            self.assertTrue(manager.valid())
+            stored=Path(tmp,'license.json').read_text()
+            self.assertNotIn('private',stored.lower())
 
 
 if __name__=='__main__':unittest.main(verbosity=2)

@@ -1,23 +1,32 @@
 Siehe `INSTALL.md` im ZIP für die vollständige Einrichtung. Die Oberfläche ist PIN-geschützt; die Display-URLs verwenden ein separates Zugriffstoken.
-# Betrieb und Berechtigungen V1.3.1
+# Betrieb und Berechtigungen V1.3.3
 
 ## Installation / Aktualisierung
 
 Den vollständigen Ordner `vantanet_maintenace` unverändert in ein Home-Assistant-Add-on-Repository oder das lokale `/addons` übernehmen. Die bestehende Schreibweise des Ordnernamens bleibt erhalten. App neu bauen und starten. Vorher `/data` sichern. Vorhandene Statistiken, Termine, Ereignisse und PIN-Hash bleiben erhalten; neue Felder werden ergänzt.
 
-`config.yaml` verwendet `homeassistant_api: true`, `hassio_api: true`, die minimale Supervisor-Rolle `default` sowie `homeassistant_config:ro`. Einzelne Systemabfragen können deshalb nicht erlaubt sein; der Bericht zeigt dies an. Die Freigabe `/homeassistant` wird nur für Metadaten von `configuration.yaml`, `automations.yaml`, `scripts.yaml` und `scenes.yaml` genutzt. Kein Dateiinhaltszugriff, kein rekursiver Scan, keine `.storage`- oder `secrets.yaml`-Auswertung.
+`config.yaml` verwendet `homeassistant_api: true`, `hassio_api: true`, die Supervisor-Rolle `homeassistant` sowie `homeassistant_config:ro`. Damit sind Core-Informationen und Core-Ressourcen zulässig; weiterreichende Manager- oder Adminrechte werden nicht angefordert. Die Freigabe `/homeassistant` wird nur für Metadaten von `configuration.yaml`, `automations.yaml`, `scripts.yaml` und `scenes.yaml` genutzt. Kein Dateiinhaltszugriff, kein rekursiver Scan, keine `.storage`- oder `secrets.yaml`-Auswertung.
+
+Der Supervisor stellt `SUPERVISOR_TOKEN` automatisch im App-Container bereit. Die App akzeptiert zusätzlich den älteren Variablennamen `HASSIO_TOKEN` und sendet den Token über `Authorization: Bearer` sowie `X-Supervisor-Token`. Ein Token darf niemals als App-Option eingetragen werden. Nach einer Änderung der API-Rolle muss die App neu erstellt werden; ein normaler Neustart übernimmt geänderte Container-Berechtigungen möglicherweise nicht. Erst eine anschließend gestartete Wartung erzeugt einen neuen Prüfstand.
 
 ## Optionen
 
 - `site_location`: Vorbelegung für den Standort im Startdialog.
-- `maintenance_lock_entity`: Optionale Entität für die Wartungssperre, z. B. `switch.wartungsmodus`. Sie wird beim Wartungsstart über `homeassistant.turn_on` aktiviert und beim manuellen oder automatischen Abschluss über `homeassistant.turn_off` deaktiviert. Bleibt das Feld leer, ist die Funktion ausgeschaltet. Der Schaltstatus wird in den Ereignissen protokolliert.
 - `kiosk_password`: Fully-Kiosk-Passwort; nicht in Prüfberichten ausgegeben.
 - `tablet_ips`: Fully-Kiosk-Geräte mit aktivierter Remote-Administration (Port 2323).
 - `home_assistant_url`, `dashboard_path`: Dashboard nach Bestätigung oder Abschluss.
 - `public_base_url`: Von den Tablets erreichbare Adresse dieser App, z. B. `http://192.168.1.2:8765`. Nicht die Ingress-Adresse.
 - `first_maintenance_due`: ISO-Datum für die Erstinitialisierung, optional mit UTC-Offset. Wirkt nicht rückwirkend auf vorhandenen Zustand.
 
-Formulartermine beziehen sich auf die lokale Zeitzone des App-Containers. Diese in Home Assistant korrekt einstellen. Das PDF nennt die Zeitzone beim Wartungsbeginn. 24 Stunden sind exakt 86.400 Sekunden, auch über eine Zeitumstellung hinweg.
+Alle Formular-, Ereignis-, Berichts- und PDF-Zeiten verwenden fest `Europe/Berlin`. Die Python-Zeitzonendaten stellen automatisch UTC+1 im Winter und UTC+2 im Sommer ein. Eine separate Zeitzonenoption ist nicht erforderlich. 24-Stunden-Erinnerungen laufen exakt 86.400 Sekunden.
+
+## Aktivierung
+
+V1.3.3 ist nach der Installation zunächst gesperrt. Beim Öffnen zeigt die App eine zufällige 32-stellige Installations-ID. VantaNet erstellt außerhalb des Repositorys mit dem privaten Signierschlüssel eine Lizenzzeichenfolge für genau diese ID. Nach dem Einfügen speichert die App die signierte Lizenz unter `/data/license.json`. Der private Schlüssel, ein allgemeines Kennwort oder ein Lizenzgeheimnis befinden sich nicht im Quellcode.
+
+Die öffentliche Add-on-ZIP enthält ausschließlich den öffentlichen RSA-Prüfschlüssel. Der private Signierschlüssel und das Ausgabewerkzeug werden separat verwahrt und dürfen niemals in GitHub, Releases, Container-Images, Kunden-Backups oder Support-Anhänge gelangen. Lizenzen können dauerhaft oder mit Ablaufdatum ausgestellt werden. Ein bestehendes System benötigt nach dem Update auf V1.3.3 einmalig eine neue Aktivierung; PIN und Wartungsdaten bleiben davon unberührt.
+
+Da der Python-Quellcode bei einer öffentlichen Veröffentlichung einsehbar ist, kann eine fachkundige Person die lokale Lizenzprüfung durch Änderung des Codes entfernen. Die Signatur schützt den regulären Auslieferungs- und Aktivierungsprozess, stellt jedoch keinen unüberwindbaren Kopierschutz dar. Für stärkere Durchsetzung wäre zusätzlich ein von VantaNet betriebener Online-Lizenzdienst erforderlich.
 
 ## Erinnerung und Wartung
 

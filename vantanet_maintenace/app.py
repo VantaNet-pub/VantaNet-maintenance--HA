@@ -2,6 +2,7 @@ import os, json, time, secrets, hashlib, hmac, threading, random, calendar, logg
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from pathlib import Path
+from berlin_time import BERLIN
 import requests
 from flask import Flask, request, redirect, session, jsonify, Response, render_template_string, abort
 
@@ -43,7 +44,7 @@ BASE=opts.get('public_base_url','http://192.168.4.2:8765').rstrip('/')
 LOGO='https://vantanet.net/assets/files/VantaNet-Logo-alone.png'
 now=lambda: int(time.time())
 def six_months(ts):
-    d=datetime.fromtimestamp(ts).astimezone()
+    d=datetime.fromtimestamp(ts,BERLIN)
     y=d.year+(d.month-1+6)//12; m=(d.month-1+6)%12+1
     day=min(d.day,calendar.monthrange(y,m)[1])
     return int(d.replace(year=y,month=m,day=day).timestamp())
@@ -51,7 +52,9 @@ def initial():
     due=now()
     try:
         if opts.get('first_maintenance_due'):
-            due=int(datetime.fromisoformat(opts['first_maintenance_due']).astimezone().timestamp())
+            value=datetime.fromisoformat(opts['first_maintenance_due'])
+            if value.tzinfo is None:value=value.replace(tzinfo=BERLIN)
+            due=int(value.astimezone(BERLIN).timestamp())
     except ValueError: logging.warning('Invalid first_maintenance_due; due immediately')
     return {'mode':'notice','due':due,'started':None,'finished':None,'duration':random.randint(40,120)*60,'ack_until':0,'last_reboot':0,'next_reboot':0,'phase_until':0,'phase':'upload','events':[],'stats':{'completed':0,'started':0,'acknowledged':0,'reboots':0},'token':secrets.token_urlsafe(24)}
 def load():
@@ -72,7 +75,7 @@ def authenticated():return bool(session.get('tech'))
 def require():
     if not authenticated():abort(403)
 def csrf_ok():return bool(session.get('csrf')) and hmac.compare_digest(str(request.form.get('csrf','')),session['csrf'])
-def stamp(ts):return datetime.fromtimestamp(ts).astimezone().strftime('%d.%m.%Y %H:%M') if ts else '—'
+def stamp(ts):return datetime.fromtimestamp(ts,BERLIN).strftime('%d.%m.%Y %H:%M') if ts else '—'
 def progress(s):return min(100,round((now()-s['started'])/s['duration']*100,1)) if s.get('started') else 0
 def url_for_mode(s,mode):
     return f"{BASE}/display/{mode}?token={quote(s['token'])}"
@@ -220,6 +223,9 @@ def ack():
     return jsonify(ok=True,next_reminder=s['ack_until'],next_reminder_text=stamp(s['ack_until']))
 from maintenance_v130 import install
 install(globals())
+from licensing import LicenseManager, install_routes
+LICENSE=LicenseManager(DATA_DIR)
+install_routes(app,LICENSE,page,secrets)
 if __name__=='__main__':
     logging.info('Fachkraft-PIN ist fest eingerichtet')
     threading.Thread(target=worker,daemon=True).start()

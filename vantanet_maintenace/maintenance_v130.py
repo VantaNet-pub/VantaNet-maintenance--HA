@@ -1,9 +1,7 @@
 """V1.3 lifecycle, automatic system checks and branded A4 documents."""
 import copy
 import io
-import os
 import random
-import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -25,31 +23,6 @@ def install(g):
     save(state)
     busy = threading.Lock()
     original_tick, original_index = g['tick'], g['index']
-
-    def set_maintenance_lock(enabled):
-        entity=str(g['opts'].get('maintenance_lock_entity','')).strip()
-        if not entity:return True
-        if not re.fullmatch(r'[a-z0-9_]+\.[a-z0-9_]+',entity):
-            with lock:
-                log(state,'Wartungssperre nicht geschaltet: ungültige Entitäts-ID');save(state)
-            return False
-        token=os.environ.get('SUPERVISOR_TOKEN')
-        if not token:
-            with lock:
-                log(state,'Wartungssperre nicht geschaltet: Supervisor-Zugriff fehlt');save(state)
-            return False
-        service='turn_on' if enabled else 'turn_off'
-        try:
-            response=g['requests'].post('http://supervisor/core/api/services/homeassistant/'+service,
-                headers={'Authorization':'Bearer '+token},json={'entity_id':entity},timeout=12)
-            ok=response.ok
-        except g['requests'].RequestException:
-            ok=False
-        with lock:
-            if ok:log(state,'Wartungssperre aktiviert' if enabled else 'Wartungssperre deaktiviert')
-            else:log(state,'Wartungssperre konnte nicht geschaltet werden')
-            save(state)
-        return ok
 
     def maintenance_report(s, maintenance_id):
         for report in reversed(s.get('reports', [])):
@@ -86,7 +59,6 @@ def install(g):
         with lock:
             changed = finish_locked(now())
             s = copy.deepcopy(state)
-        if changed:set_maintenance_lock(False)
         return tablet('home', s) if changed else []
 
     def tick():
@@ -97,9 +69,7 @@ def install(g):
                 finished=('home', copy.deepcopy(state))
             if state['mode'] != 'upload' and not state['reminder_enabled']:
                 return None
-        if finished:
-            set_maintenance_lock(False)
-            return finished
+        if finished:return finished
         return original_tick()
     g.update(tick=tick, action_finish=action_finish)
 
@@ -109,7 +79,7 @@ def install(g):
         session.setdefault('csrf', g['secrets'].token_urlsafe(24))
         return g['page'](DASHBOARD, s=s, csrf=session['csrf'], stamp=stamp,
             active=s['mode']=='upload', pct=g['progress'](s),
-            due_input=datetime.fromtimestamp(s['due']).astimezone().strftime('%Y-%m-%dT%H:%M'),
+            due_input=datetime.fromtimestamp(s['due'],g['BERLIN']).strftime('%Y-%m-%dT%H:%M'),
             location=g['opts'].get('site_location',''), message=request.args.get('message',''),
             reporting=busy.locked())
     app.view_functions['index'] = index
@@ -118,7 +88,6 @@ def install(g):
         require()
         if not csrf_ok(): abort(403)
         report_snapshot=None
-        lock_toggle=None
         with lock:
             if name in ('start','show_notice') and state['mode']=='upload': abort(409)
             if name == 'start':
@@ -141,11 +110,9 @@ def install(g):
                 log(state,'Wartung gestartet; Home-Assistant-Prüfung läuft')
                 report_snapshot={'id':maintenance_id,'started':state['started'],
                     'planned_seconds':state['duration'],'technician':copy.deepcopy(tech)}
-                lock_toggle=True
                 save(state); s=copy.deepcopy(state); target='upload'
             elif name == 'finish':
                 changed=finish_locked(now());s=copy.deepcopy(state);target='home' if changed else None
-                if changed:lock_toggle=False
             elif name == 'show_notice':
                 state.update(mode='notice',ack_until=0,reminder_enabled=True)
                 log(state,'Hinweis manuell geöffnet');save(state);s=copy.deepcopy(state);target='notice'
@@ -159,8 +126,8 @@ def install(g):
             elif name == 'set_due':
                 try:
                     text=request.form.get('due','')
-                    value=datetime.fromisoformat(text)
-                    ts=int(value.astimezone().timestamp())
+                    value=datetime.fromisoformat(text).replace(tzinfo=g['BERLIN'])
+                    ts=int(value.timestamp())
                     if ts <= now(): abort(400)
                 except (ValueError,OverflowError,OSError): abort(400)
                 state.update(due=ts,due_manual=True,reminder_enabled=True,ack_until=0)
@@ -176,7 +143,6 @@ def install(g):
                 log(state,'Erinnerung aktiviert' if enabled else 'Erinnerung deaktiviert / gelöscht')
                 save(state);s=copy.deepcopy(state)
             else:abort(404)
-        if lock_toggle is not None:set_maintenance_lock(lock_toggle)
         if report_snapshot:
             threading.Thread(target=run_report,args=(report_snapshot,),daemon=True).start()
         if target: tablet(target,s)
@@ -225,12 +191,10 @@ def install(g):
         return g['page'](MAINTENANCE_DISPLAY,dashboard_url=g['HA']+g['DASH'])
     original_display=g['display']
     app.view_functions['display']=display_v130
-    if state.get('mode')=='upload' and g['opts'].get('maintenance_lock_entity'):
-        threading.Thread(target=set_maintenance_lock,args=(True,),daemon=True).start()
 
 
 DASHBOARD = '''
-<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>V1.3.1 · Fachkraft-Verwaltung</p></div></div>
+<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>V1.3.3 · Fachkraft-Verwaltung</p></div></div>
 {% macro form(action,label,disabled=false) %}<form method="post" action="action/{{action}}"><input type="hidden" name="csrf" value="{{csrf}}"><button {% if disabled %}disabled{% endif %}>{{label}}</button></form>{% endmacro %}
 <style>button:disabled{opacity:.4;cursor:not-allowed}dialog{background:#121d2d;color:#eaf0fc;border:1px solid #38506f;border-radius:16px;max-width:780px;width:94%}dialog::backdrop{background:#000b}select{padding:12px;width:100%;background:#0c1524;color:white}label{display:block}article{border-top:1px solid #38506f;padding:12px 0}.eye{background:transparent;font-size:22px;padding:4px 10px}.event-list{max-height:60vh;overflow:auto}.event{display:grid;grid-template-columns:145px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #263751}.report-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.status-ok{color:#55d89d}.status-note{color:#ffbd74}@media(max-width:600px){.event{grid-template-columns:1fr}}</style>
 <div class="grid"><div class="stat">Status<b>{{s.mode|upper}}</b></div><div class="stat">Nächste Wartung<b>{{stamp(s.due)}}</b></div><div class="stat">Abgeschlossen<b>{{s.stats.completed}}</b></div><div class="stat">SFRP-Zyklen<b>{{s.stats.reboots}}</b></div></div>

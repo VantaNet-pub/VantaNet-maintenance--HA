@@ -5,20 +5,30 @@ from pathlib import Path
 import requests
 
 
+def supervisor_token():
+    return os.environ.get('SUPERVISOR_TOKEN') or os.environ.get('HASSIO_TOKEN')
+
+
+def supervisor_headers(token):
+    return {'Authorization':'Bearer '+token,'X-Supervisor-Token':token}
+
+
 def collect():
     report = {'id': os.urandom(12).hex(), 'created': int(time.time()), 'checks': []}
-    token = os.environ.get('SUPERVISOR_TOKEN')
+    token = supervisor_token()
     def check(label, path, summarize):
         item = {'area': label, 'source': path}
         if not token:
-            item.update(status='nicht verfügbar', detail='Kein Supervisor-Zugriff konfiguriert')
+            item.update(status='nicht verfügbar', detail='Supervisor-Token fehlt im laufenden Container. App neu erstellen und neu starten.')
         else:
             try:
                 r = requests.get('http://supervisor' + path,
-                    headers={'Authorization': 'Bearer ' + token}, timeout=12,
+                    headers=supervisor_headers(token), timeout=12,
                     allow_redirects=False)
-                if r.status_code in (401, 403):
-                    item.update(status='nicht berechtigt', detail='API verweigert den Zugriff')
+                if r.status_code == 401:
+                    item.update(status='nicht berechtigt', detail='Supervisor-Token wurde abgelehnt. App-Container neu erstellen.')
+                elif r.status_code == 403:
+                    item.update(status='nicht berechtigt', detail='Supervisor-Rolle verweigert diesen Endpunkt. App-Metadaten und Rebuild prüfen.')
                 elif r.status_code != 200:
                     item.update(status='nicht verfügbar', detail='HTTP ' + str(r.status_code))
                 else:
@@ -27,8 +37,10 @@ def collect():
                         raise ValueError('API error')
                     data = body.get('data', body) if isinstance(body, dict) else body
                     item.update(status='geprüft', detail=summarize(data))
-            except (requests.RequestException, ValueError, TypeError, KeyError, AttributeError):
-                item.update(status='nicht verfügbar', detail='Verbindung oder Antwort nicht auswertbar')
+            except requests.RequestException:
+                item.update(status='nicht verfügbar', detail='Supervisor unter http://supervisor ist nicht erreichbar')
+            except (ValueError, TypeError, KeyError, AttributeError):
+                item.update(status='nicht verfügbar', detail='Supervisor-Antwort konnte nicht ausgewertet werden')
         report['checks'].append(item)
 
     def versions(d):
@@ -44,6 +56,7 @@ def collect():
         if not parts:raise ValueError('No versions')
         return '; '.join(parts)
 
+    check('Supervisor-Verbindung', '/info', lambda d:'Supervisor erreichbar; App-Token wurde akzeptiert')
     check('System / Core', '/core/info', versions)
     def resources(d):
         parts=[]
@@ -67,7 +80,7 @@ def collect():
     # Device registry is a separate, read-only WebSocket command.
     item = {'area': 'Geräte / Registry', 'source': '/core/websocket · config/device_registry/list'}
     if not token:
-        item.update(status='nicht verfügbar', detail='Kein Supervisor-Zugriff konfiguriert')
+        item.update(status='nicht verfügbar', detail='Supervisor-Token fehlt im laufenden Container. App neu erstellen und neu starten.')
     else:
         ws = None
         try:
