@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+/data/
+options.json
+maintenance.json
+technician_pin.json
+license.json
+license_installation.json
+private_key.pem
+*.private.pem
+*.key
