@@ -1,5 +1,5 @@
 Siehe `INSTALL.md` im ZIP für die vollständige Einrichtung. Die Oberfläche ist PIN-geschützt; die Display-URLs verwenden ein separates Zugriffstoken.
-# Betrieb und Berechtigungen V1.3.3
+# Betrieb und Berechtigungen V1.3.4
 
 ## Installation / Aktualisierung
 
@@ -7,7 +7,7 @@ Den vollständigen Ordner `vantanet_maintenace` unverändert in ein Home-Assista
 
 `config.yaml` verwendet `homeassistant_api: true`, `hassio_api: true`, die Supervisor-Rolle `homeassistant` sowie `homeassistant_config:ro`. Damit sind Core-Informationen und Core-Ressourcen zulässig; weiterreichende Manager- oder Adminrechte werden nicht angefordert. Die Freigabe `/homeassistant` wird nur für Metadaten von `configuration.yaml`, `automations.yaml`, `scripts.yaml` und `scenes.yaml` genutzt. Kein Dateiinhaltszugriff, kein rekursiver Scan, keine `.storage`- oder `secrets.yaml`-Auswertung.
 
-Der Supervisor stellt `SUPERVISOR_TOKEN` automatisch im App-Container bereit. Die App akzeptiert zusätzlich den älteren Variablennamen `HASSIO_TOKEN` und sendet den Token über `Authorization: Bearer` sowie `X-Supervisor-Token`. Ein Token darf niemals als App-Option eingetragen werden. Nach einer Änderung der API-Rolle muss die App neu erstellt werden; ein normaler Neustart übernimmt geänderte Container-Berechtigungen möglicherweise nicht. Erst eine anschließend gestartete Wartung erzeugt einen neuen Prüfstand.
+Der Supervisor stellt `SUPERVISOR_TOKEN` automatisch im App-Container bereit. Die App startet Python über `/command/with-contenv`, damit S6 diese geschützte Containerumgebung an den Prozess übergibt. Zusätzlich wird der ältere Variablenname `HASSIO_TOKEN` akzeptiert; der Token wird über `Authorization: Bearer` sowie `X-Supervisor-Token` gesendet. Ein Token darf niemals als App-Option eingetragen werden. Nach einer Änderung der API-Rolle oder des Startbefehls muss die App neu erstellt werden. Erst eine anschließend gestartete Wartung erzeugt einen neuen Prüfstand.
 
 ## Optionen
 
@@ -22,9 +22,9 @@ Alle Formular-, Ereignis-, Berichts- und PDF-Zeiten verwenden fest `Europe/Berli
 
 ## Aktivierung
 
-V1.3.3 ist nach der Installation zunächst gesperrt. Beim Öffnen zeigt die App eine zufällige 32-stellige Installations-ID. VantaNet erstellt außerhalb des Repositorys mit dem privaten Signierschlüssel eine Lizenzzeichenfolge für genau diese ID. Nach dem Einfügen speichert die App die signierte Lizenz unter `/data/license.json`. Der private Schlüssel, ein allgemeines Kennwort oder ein Lizenzgeheimnis befinden sich nicht im Quellcode.
+V1.3.4 ist nach der Installation zunächst gesperrt. Beim Öffnen zeigt die App eine zufällige 32-stellige Installations-ID. VantaNet erstellt außerhalb des Repositorys mit dem privaten Signierschlüssel eine Lizenzzeichenfolge für genau diese ID. Nach dem Einfügen speichert die App die signierte Lizenz unter `/data/license.json`. Der private Schlüssel, ein allgemeines Kennwort oder ein Lizenzgeheimnis befinden sich nicht im Quellcode.
 
-Die öffentliche Add-on-ZIP enthält ausschließlich den öffentlichen RSA-Prüfschlüssel. Der private Signierschlüssel und das Ausgabewerkzeug werden separat verwahrt und dürfen niemals in GitHub, Releases, Container-Images, Kunden-Backups oder Support-Anhänge gelangen. Lizenzen können dauerhaft oder mit Ablaufdatum ausgestellt werden. Ein bestehendes System benötigt nach dem Update auf V1.3.3 einmalig eine neue Aktivierung; PIN und Wartungsdaten bleiben davon unberührt.
+Die öffentliche Add-on-ZIP enthält ausschließlich den öffentlichen RSA-Prüfschlüssel. Der private Signierschlüssel und das Ausgabewerkzeug werden separat verwahrt und dürfen niemals in GitHub, Releases, Container-Images, Kunden-Backups oder Support-Anhänge gelangen. Lizenzen können dauerhaft oder mit Ablaufdatum ausgestellt werden. Ein bestehendes System benötigt nach dem Update auf V1.3.4 keine neue Aktivierung, sofern die App-Daten erhalten bleiben; PIN und Wartungsdaten bleiben davon unberührt.
 
 Da der Python-Quellcode bei einer öffentlichen Veröffentlichung einsehbar ist, kann eine fachkundige Person die lokale Lizenzprüfung durch Änderung des Codes entfernen. Die Signatur schützt den regulären Auslieferungs- und Aktivierungsprozess, stellt jedoch keinen unüberwindbaren Kopierschutz dar. Für stärkere Durchsetzung wäre zusätzlich ein von VantaNet betriebener Online-Lizenzdienst erforderlich.
 

@@ -1,4 +1,4 @@
-# Prüfprotokoll V1.3.3
+# Prüfprotokoll V1.3.4
 
 Stand: 30.10.2026. Grundlage: unveränderte Original-ZIP `VantaNet-maintenance--HA-main.zip`, lokal entpackt und bearbeitet. Testumgebung: Windows, Python 3.12.10. Alle folgenden Prüfungen beziehen sich auf den ausgelieferten Quellstand.
 
@@ -31,6 +31,8 @@ Stand: 30.10.2026. Grundlage: unveränderte Original-ZIP `VantaNet-maintenance--
 23. Aktivierung wird ohne privaten Schlüssel unter `/data` gespeichert und erneut verifiziert.
 
 Zusätzlich bestanden: Python-Syntaxprüfung aller Module, YAML-Einlesen, Übereinstimmung von Optionen/Schema und Build-Architekturen, erfolgreiche Auslieferung der Verwaltungs- und Displayseiten sowie JavaScript-Syntaxprüfung der gerenderten Skripte mit Node.js.
+
+Für V1.3.4 wurde zusätzlich der Container-Startbefehl gegen die Home-Assistant-Laufzeitdokumentation geprüft: Python wird über `/command/with-contenv` gestartet; die bestehenden 23 Anwendungstests und Python-Module wurden gegenüber V1.3.3 nicht verändert.
 
 PDF: Wartungsübergabe und Prüfbericht wurden als A4-Dokumente erzeugt, mit PDFium gerendert und kontrolliert. Logo, Umlaute, Ränder, Seitenzahlen, Statusfelder und Unterschriftenbereiche sind lesbar. Die Beispiel-PDFs und sämtliche Test-Laufzeitdaten sind nicht Teil der ZIP.
 

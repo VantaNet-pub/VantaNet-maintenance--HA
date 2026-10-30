@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.4
+
+- App-Prozess wird über Home Assistants `with-contenv` gestartet, damit `SUPERVISOR_TOKEN`, `HASSIO_TOKEN` und `TZ` aus der S6-Containerumgebung zuverlässig an Python übergeben werden.
+- Supervisor-Prüfungen benötigen weiterhin keinen manuell eingetragenen Token.
+
 ## 1.3.3
 
 - App-Store-Logo und -Icon ergänzt; Beschreibung überarbeitet.

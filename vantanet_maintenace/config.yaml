@@ -1,5 +1,5 @@
 name: VantaNet Maintenance
-version: "1.3.3"
+version: "1.3.4"
 slug: vantanet_maintenance
 description: Automatisierte Home-Assistant-Wartung mit Systemprüfung, Tablet-Steuerung und A4-Dokumentation
 url: https://vantanet.net

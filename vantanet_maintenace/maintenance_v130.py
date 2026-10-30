@@ -194,7 +194,7 @@ def install(g):
 
 
 DASHBOARD = '''
-<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>V1.3.3 · Fachkraft-Verwaltung</p></div></div>
+<div class="brand"><img src="{{logo}}" alt="VantaNet"><div><h1>VantaNet Maintenance</h1><p>V1.3.4 · Fachkraft-Verwaltung</p></div></div>
 {% macro form(action,label,disabled=false) %}<form method="post" action="action/{{action}}"><input type="hidden" name="csrf" value="{{csrf}}"><button {% if disabled %}disabled{% endif %}>{{label}}</button></form>{% endmacro %}
 <style>button:disabled{opacity:.4;cursor:not-allowed}dialog{background:#121d2d;color:#eaf0fc;border:1px solid #38506f;border-radius:16px;max-width:780px;width:94%}dialog::backdrop{background:#000b}select{padding:12px;width:100%;background:#0c1524;color:white}label{display:block}article{border-top:1px solid #38506f;padding:12px 0}.eye{background:transparent;font-size:22px;padding:4px 10px}.event-list{max-height:60vh;overflow:auto}.event{display:grid;grid-template-columns:145px 1fr;gap:12px;padding:10px 0;border-bottom:1px solid #263751}.report-head{display:flex;justify-content:space-between;align-items:center;gap:12px}.status-ok{color:#55d89d}.status-note{color:#ffbd74}@media(max-width:600px){.event{grid-template-columns:1fr}}</style>
 <div class="grid"><div class="stat">Status<b>{{s.mode|upper}}</b></div><div class="stat">Nächste Wartung<b>{{stamp(s.due)}}</b></div><div class="stat">Abgeschlossen<b>{{s.stats.completed}}</b></div><div class="stat">SFRP-Zyklen<b>{{s.stats.reboots}}</b></div></div>

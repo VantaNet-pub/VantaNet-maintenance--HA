@@ -90,7 +90,7 @@ def _canvas_class(title, subtitle, logo_path):
             self.line(16*mm, 15*mm, width-16*mm, 15*mm)
             self.setFillColor(MUTED)
             self.setFont('Helvetica', 7.5)
-            self.drawString(16*mm, 9.5*mm, 'VantaNet Maintenance 1.3.3')
+            self.drawString(16*mm, 9.5*mm, 'VantaNet Maintenance 1.3.4')
             self.drawRightString(width-16*mm, 9.5*mm,
                 f'Seite {self.getPageNumber()} / {total}')
             self.restoreState()
